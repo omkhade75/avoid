@@ -56,6 +56,20 @@ export const AVAILABLE_VOICES: VoiceOption[] = [
         provider: "11labs",
         description: "American, clear, youthful - Good for friendly assistants",
         gender: "female"
+    },
+    {
+        id: "JBFqnCBsd6RMkjVDRZzb",
+        name: "George",
+        provider: "11labs",
+        description: "British, clear, professional - Often easier for international audiences",
+        gender: "male"
+    },
+    {
+        id: "D38z5RcWu1voky8WS1ja",
+        name: "Fin",
+        provider: "11labs",
+        description: "Irish, energetic, fast - Good for gaming/dynamic content",
+        gender: "male"
     }
 ];
 

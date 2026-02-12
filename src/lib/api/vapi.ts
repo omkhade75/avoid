@@ -9,36 +9,35 @@ const elevenLabsKey = import.meta.env.VITE_ELEVENLABS_API_KEY;
 export const vapi = new Vapi(publicKey);
 
 const MULTILINGUAL_INSTRUCTION = `
-CRITICAL INSTRUCTION: You are a highly capable bilingual agent.
-1. AUTOMATICALLY DETECT the user's language (English or Hindi).
-2. If the user speaks Hindi, YOU MUST REPLY IN HINDI (using Devanagari script or Hinglish as appropriate).
-3. If the user speaks English, reply in English.
-4. If the user switches language mid-conversation, YOU MUST SWITCH IMMEDIATELY.
-5. Always maintain your persona and politeness, regardless of the language used.
+CRITICAL INSTRUCTION: You are a highly capable agent designed for an Indian audience.
+1. LANGUAGE: Speak in "Indian English" (clear, neutral, simple vocabulary).
+2. ADAPTABILITY: If the user speaks Hindi, REPLY IN HINDI. If they mix Hindi/English (Hinglish), you do the same.
+3. CLARITY: Speak at a moderate pace. Avoid distinct American idioms (e.g., "hit the ground running"). Use direct, polite phrasing common in India (e.g., "Please do the needful" or "I will surely help you").
+4. PLAYING THE ROLE: Maintain your professional persona but be warm and respectful (use "Sir/Ma'am").
 `;
 
 export const startAgentCall = async (systemPrompt: string, firstMessage: string = "Hello! It is a pleasure to speak with you.", voiceId: string = "21m00Tcm4TlvDq8ikWAM") => {
     try {
-        const callConfig: any = {
+        const callConfig = {
             model: {
-                provider: "openai",
-                model: "gpt-4-turbo", // Upgrade for better conversation quality
+                provider: "openai" as const,
+                model: "gpt-4o" as const, // Premium model for best conversation quality
                 temperature: 0.7,
                 maxTokens: 500,
                 messages: [
                     {
-                        role: "system",
-                        content: systemPrompt + "\n\n" + MULTILINGUAL_INSTRUCTION + "\n\nCRITICAL INSTRUCTION: You represent the gold standard of politeness and warmth. \n1. Speak with genuine kindness, empathy, and patience.\n2. Use polite language (Please, Thank you, It would be my pleasure).\n3. Make the user feel valued and understood.\n4. Never be abrupt or dismissive.\n5. Answer fully and helpfully, but always with a 'smile' in your voice.",
+                        role: "system" as const,
+                        content: systemPrompt + "\n\n" + MULTILINGUAL_INSTRUCTION + "\n\nCRITICAL INSTRUCTION: You represent the gold standard of politeness and warmth. \n1. Speak with genuine kindness, empathy, and patience.\n2. Use polite language (Please, Thank you, It would be my pleasure).\n3. Make the user feel valued and understood.\n4. Never be abrupt or dismissive.\n5. Answer fully and helpfully, but always with a 'smile' in your voice.\n6. Provide detailed, comprehensive information. Avoid being too brief.",
                     },
                 ],
             },
             transcriber: {
-                provider: "deepgram",
-                model: "nova-2",
-                language: "multi", // Enables automatic language detection (English + Hindi + others)
+                provider: "deepgram" as const,
+                model: "nova-2" as const,
+                language: "multi" as const, // Enables automatic language detection (English + Hindi + others)
             },
             voice: {
-                provider: "11labs",
+                provider: "11labs" as const,
                 voiceId: voiceId, // Default to "Rachel" (Warm/Polite)
             },
             firstMessage: firstMessage,
@@ -76,7 +75,7 @@ export const makeOutboundCall = async (phoneNumber: string, systemPrompt: string
                 provider: "openai",
                 model: "gpt-4o",
                 messages: [
-                    { role: "system", content: systemPrompt + "\n\n" + MULTILINGUAL_INSTRUCTION }
+                    { role: "system", content: systemPrompt + "\n\n" + MULTILINGUAL_INSTRUCTION + "\n\nCRITICAL INSTRUCTION: Provide detailed and comprehensive responses. Do not be overly concise." }
                 ],
                 temperature: 0.7,
             },
