@@ -1,16 +1,24 @@
+
 import { motion } from "framer-motion";
 import { useParams, Link, useLocation } from "react-router-dom";
-import { Download, Play, Phone, Copy, ArrowLeft, Bot, MessageSquare, Activity, Zap, Brain, Shield, Globe, Mic, Volume2, UploadCloud, ArrowRight, UserCheck, Settings } from "lucide-react";
+import { Download, Play, Phone, Copy, ArrowLeft, Bot, MessageSquare, Activity, Zap, Brain, Shield, Globe, Mic, Volume2, ArrowRight, UserCheck, Settings, Github, Terminal, Save, FileCode2, UploadCloud } from "lucide-react";
+import { ProjectIntegrator } from "@/components/AgentIntegration/ProjectIntegrator";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { StatCard } from "@/components/StatCard";
 import { useAuth } from "@/contexts/AuthContext";
 import { startAgentCall, stopAgentCall, vapi, makeOutboundCall } from "@/lib/api/vapi"; // Import makeOutboundCall
 import { exportAgentAsZip } from "@/lib/agent-exporter";
+import { githubService } from "@/lib/services/github-service";
 import { useToast } from "@/components/ui/use-toast";
 import { useState, useEffect, useRef } from "react";
 import ChatInterface from "@/components/ChatInterface";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input"; // Import Input
+import { Button } from "@/components/ui/button"; // Import Button
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { AVAILABLE_VOICES, DEFAULT_VOICE_ID } from "@/lib/config/voices";
 
 const agentConfig = {
   agent_name: "Luna Sales",
@@ -22,14 +30,14 @@ const agentConfig = {
   risk_control: "medium",
   language: "English",
   tools_enabled: ["phone_call", "calendar_api", "crm_update", "email_send", "knowledge_base"],
-  system_prompt: `You are Luna, an AI real estate sales agent. Your primary goal is to qualify inbound leads and schedule property viewings.\n\nRules:\n- Always be professional and helpful\n- Ask qualifying questions: budget, timeline, location preferences\n- Handle objections with empathy\n- Book appointments using the calendar tool\n- Log all interactions to CRM\n- Never make promises about pricing\n- Escalate to human agent if prospect is hostile`,
+  system_prompt: `You are Luna, an AI real estate sales agent. Your primary goal is to qualify inbound leads and schedule property viewings.\n\nRules: \n - Always be professional and helpful\n - Ask qualifying questions: budget, timeline, location preferences\n - Handle objections with empathy\n - Book appointments using the calendar tool\n- Log all interactions to CRM\n - Never make promises about pricing\n - Escalate to human agent if prospect is hostile\n - Provide detailed and helpful responses to all user queries.`,
 };
 
 const AgentDetail = () => {
   const { id } = useParams();
   const location = useLocation();
   const userPrompt = location.state?.prompt;
-  const { agents } = useAuth();
+  const { agents, updateAgent } = useAuth();
   const { toast } = useToast();
   const [isCalling, setIsCalling] = useState(false);
   const [callStatus, setCallStatus] = useState<"idle" | "connecting" | "listening" | "speaking">("idle");
@@ -38,9 +46,55 @@ const AgentDetail = () => {
   const [targetPhoneNumber, setTargetPhoneNumber] = useState("");
   const [isOutboundCalling, setIsOutboundCalling] = useState(false);
   const [isIntegrating, setIsIntegrating] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [showIntegrator, setShowIntegrator] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+
+
   const agent = agents.find(a => a.id === id);
+
+  // Edit State
+  const [editForm, setEditForm] = useState({
+    name: "",
+    role: "",
+    voiceId: "",
+    firstMessage: "",
+    systemPrompt: "",
+    status: "active" as "active" | "inactive" | "training"
+  });
+
+  useEffect(() => {
+    if (agent) {
+      setEditForm({
+        name: agent.name,
+        role: agent.role,
+        voiceId: agent.voiceId || DEFAULT_VOICE_ID,
+        firstMessage: agent.firstMessage || "",
+        systemPrompt: agent.systemPrompt || "",
+        status: agent.status
+      });
+    }
+  }, [agent]);
+
+  const handleSaveSettings = () => {
+    if (!agent) return;
+
+    // Update agent settings
+    const selectedVoice = AVAILABLE_VOICES.find(v => v.id === editForm.voiceId);
+
+    updateAgent(agent.id, {
+      name: editForm.name,
+      role: editForm.role,
+      voiceId: editForm.voiceId,
+      voiceName: selectedVoice ? selectedVoice.name : "Default",
+      firstMessage: editForm.firstMessage,
+      systemPrompt: editForm.systemPrompt,
+      status: editForm.status
+    });
+
+    toast({ title: "Settings Saved", description: "Agent configuration updated successfully." });
+  };
 
   const handleOutboundCall = async () => {
     if (!targetPhoneNumber.trim()) {
@@ -64,13 +118,15 @@ const AgentDetail = () => {
       const greeting = agent?.firstMessage || `Hello! I'm calling from ${agent?.name || 'our organization'} to discuss an important matter with you.`;
       console.log("🎯 SENDING GREETING TO VAPI:", greeting);
 
-      await makeOutboundCall(targetPhoneNumber, agent?.systemPrompt || "", greeting);
+      // Use agent's voice ID or default
+      const voiceId = agent?.voiceId || DEFAULT_VOICE_ID;
+      await makeOutboundCall(targetPhoneNumber, agent?.systemPrompt || "", greeting, voiceId);
       toast({ title: "Call Successful", description: "Your phone should be ringing now!" });
-    } catch (error: any) {
+    } catch (error) {
       console.error("❌ OUTBOUND CALL ERROR:", error);
       toast({
         title: "Outbound Call Failed",
-        description: error.message || "Failed to initiate call. Check API configuration.",
+        description: error instanceof Error ? error.message : "Failed to initiate call. Check API configuration.",
         variant: "destructive"
       });
     } finally {
@@ -106,7 +162,7 @@ const AgentDetail = () => {
       setVolumeLevel(level);
     };
 
-    const onError = (error: any) => {
+    const onError = (error: unknown) => {
       console.error("Vapi Error:", error);
       setCallStatus("idle");
       setIsCalling(false);
@@ -133,7 +189,7 @@ const AgentDetail = () => {
       vapi.off("volume-level", onVolumeLevel);
       vapi.off("error", onError);
     };
-  }, []);
+  }, [toast]);
 
   if (!agent) {
     return (
@@ -171,7 +227,10 @@ const AgentDetail = () => {
     } else {
       try {
         const greeting = agent.firstMessage || `Hello! I am ${agent.name}. How can I help you today?`;
-        await startAgentCall(displayConfig.system_prompt, greeting);
+
+        // Use agent's voice ID or default
+        const voiceId = agent.voiceId || DEFAULT_VOICE_ID;
+        await startAgentCall(displayConfig.system_prompt, greeting, voiceId);
         setIsCalling(true);
       } catch (error) {
         toast({ title: "Call Failed", description: "Could not connect to voice server.", variant: "destructive" });
@@ -188,7 +247,12 @@ const AgentDetail = () => {
       role: agent.role,
       systemPrompt: agent.systemPrompt || "",
       tools: [],
-      autonomy: agent.autonomy
+      autonomy: agent.autonomy,
+      apiKey: import.meta.env.VITE_OPENAI_API_KEY || "",
+      vapiPublicKey: import.meta.env.VITE_VAPI_PUBLIC_KEY || "",
+      elevenLabsKey: import.meta.env.VITE_ELEVENLABS_API_KEY || "",
+      groqApiKey: import.meta.env.VITE_GROQ_API_KEY || "",
+      weatherApiKey: import.meta.env.VITE_WEATHER_API_KEY || ""
     });
 
     toast({ title: "Download Started", description: "Your agent package is ready." });
@@ -216,6 +280,58 @@ const AgentDetail = () => {
     } finally {
       setIsIntegrating(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+
+
+  const handleGithubPublish = async () => {
+    const token = localStorage.getItem("github_pat");
+    if (!token) {
+      toast({
+        title: "GitHub Not Connected",
+        description: "Please go to Settings and add your Personal Access Token first.",
+        variant: "destructive",
+        action: <Link to="/settings" className="underline font-bold">Settings</Link>
+      });
+      return;
+    }
+
+    setIsPublishing(true);
+    toast({ title: "Publishing to GitHub...", description: "Creating repository and pushing files." });
+
+    try {
+      const repoName = agent.name.toLowerCase().replace(/\s+/g, '-') + "-agent";
+
+      // 1. Create Repo
+      const repoResult = await githubService.createRepository(token, repoName, agent.role || "AI Agent created with AgentFactory");
+
+      // 2. Generate Files
+      const files = githubService.generateAgentProjectFiles(agent);
+
+      // 3. Push Files
+      await githubService.pushFilesToRepo(token, repoResult.owner, repoResult.name, files, "Initial commit from AgentFactory");
+
+      toast({
+        title: "Published Successfully!",
+        description: `Agent is live at github.com/${repoResult.owner}/${repoResult.name}`,
+        action: (
+          <a href={repoResult.url} target="_blank" rel="noreferrer" className="bg-white text-black px-3 py-2 rounded-lg font-bold text-xs hover:bg-gray-200">
+            View Repo
+          </a>
+        )
+      });
+      console.log("Published to:", repoResult.url);
+
+    } catch (error) {
+      console.error("Publishing Failed:", error);
+      toast({
+        title: "Publishing Failed",
+        description: error instanceof Error ? error.message : "Could not push to GitHub. Check permissions.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsPublishing(false);
     }
   };
 
@@ -266,18 +382,14 @@ const AgentDetail = () => {
                 className="hidden"
               />
 
-              <button
-                onClick={handleIntegrateClick}
-                disabled={isIntegrating}
-                className="btn-outline-neon flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium hover:bg-white/5 transition-all border border-white/10 hover:border-primary/50"
-              >
-                {isIntegrating ? (
-                  <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <UploadCloud className="h-4 w-4" />
-                )}
-                Add into Project
-              </button>
+              <Button variant="outline" className="gap-2" onClick={() => setShowIntegrator(true)}>
+                <FileCode2 size={16} />
+                Integrate Project
+              </Button>
+              <Button variant="outline" className="gap-2" onClick={handleGithubPublish} disabled={isPublishing}>
+                <Github size={16} />
+                {isPublishing ? "Publishing..." : "Publish to GitHub"}
+              </Button>
 
               <button
                 onClick={handleDownload}
@@ -285,6 +397,7 @@ const AgentDetail = () => {
               >
                 <Download className="h-4 w-4" /> Export Config
               </button>
+
               <button
                 onClick={handleCallToggle}
                 className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold shadow-lg transition-all hover:scale-105 active:scale-95 ${isCalling
@@ -470,118 +583,138 @@ const AgentDetail = () => {
 
           <TabsContent value="settings" className="mt-0">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Agent Identity */}
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass-card rounded-2xl p-6 space-y-4">
-                <h3 className="flex items-center gap-2 text-sm font-bold text-foreground uppercase tracking-wider mb-4">
-                  <UserCheck className="h-4 w-4 text-primary" /> Agent Identity
-                </h3>
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs text-muted-foreground font-medium">Agent Name</label>
-                    <p className="text-sm font-bold text-white mt-1">{agent.name}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground font-medium">Role</label>
-                    <p className="text-sm font-bold text-white mt-1">{agent.role}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground font-medium">Status</label>
-                    <div className="flex items-center gap-2 mt-1">
-                      <div className={`h-2 w-2 rounded-full ${agent.status === 'active' ? 'bg-green-500' : 'bg-gray-500'}`} />
-                      <p className="text-sm font-bold text-white capitalize">{agent.status}</p>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground font-medium">Created</label>
-                    <p className="text-sm text-white mt-1">{new Date(agent.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-                  </div>
-                </div>
-              </motion.div>
-
-              {/* First Message (Greeting) */}
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="glass-card rounded-2xl p-6 space-y-4">
-                <h3 className="flex items-center gap-2 text-sm font-bold text-foreground uppercase tracking-wider mb-4">
-                  <MessageSquare className="h-4 w-4 text-primary" /> First Message (Greeting)
-                </h3>
-                <div className="bg-black/40 rounded-xl p-4 border border-white/5">
-                  <p className="text-sm text-gray-300 leading-relaxed">
-                    {agent.firstMessage || "Hello! How can I assist you today?"}
-                  </p>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  This is the first thing the agent says when a call connects.
-                </p>
-              </motion.div>
-
-              {/* Configuration */}
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass-card rounded-2xl p-6 space-y-4">
-                <h3 className="flex items-center gap-2 text-sm font-bold text-foreground uppercase tracking-wider mb-4">
-                  <Settings className="h-4 w-4 text-primary" /> Configuration
-                </h3>
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs text-muted-foreground font-medium">Autonomy Level</label>
-                    <div className="flex items-center gap-3 mt-2">
-                      <div className="flex-1 h-2 rounded-full bg-secondary overflow-hidden">
-                        <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-primary" style={{ width: `${(agent.autonomy / 5) * 100}%` }} />
-                      </div>
-                      <span className="text-sm font-bold text-primary">Level {agent.autonomy}</span>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground font-medium">Tools Enabled</label>
-                    <p className="text-sm font-bold text-white mt-1">{agent.tools} tools</p>
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground font-medium">Voice Provider</label>
-                    <p className="text-sm text-white mt-1">ElevenLabs (Rachel)</p>
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground font-medium">AI Model</label>
-                    <p className="text-sm text-white mt-1">GPT-4o (OpenAI)</p>
-                  </div>
-                </div>
-              </motion.div>
-
-              {/* User Prompt */}
-              {agent.userPrompt && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="glass-card rounded-2xl p-6 space-y-4">
-                  <h3 className="flex items-center gap-2 text-sm font-bold text-foreground uppercase tracking-wider mb-4">
-                    <Bot className="h-4 w-4 text-primary" /> Original Request
+              {/* General Settings */}
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass-card rounded-2xl p-6 space-y-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="flex items-center gap-2 text-sm font-bold text-foreground uppercase tracking-wider">
+                    <Settings className="h-4 w-4 text-primary" /> General Configuration
                   </h3>
-                  <div className="bg-black/40 rounded-xl p-4 border border-white/5">
-                    <p className="text-sm text-gray-300 italic">"{agent.userPrompt}"</p>
+                  <Button onClick={handleSaveSettings} size="sm" className="bg-primary hover:bg-primary/90 text-white font-bold rounded-lg gap-2">
+                    <Save className="h-4 w-4" /> Save Changes
+                  </Button>
+                </div>
+
+                <div className="grid gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="agent-name">Agent Name</Label>
+                    <Input
+                      id="agent-name"
+                      value={editForm.name}
+                      onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                      className="bg-black/40 border-white/10"
+                    />
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    This was your original description when creating this agent.
-                  </p>
-                </motion.div>
-              )}
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="agent-role">Role / Description</Label>
+                    <Input
+                      id="agent-role"
+                      value={editForm.role}
+                      onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
+                      className="bg-black/40 border-white/10"
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="agent-status">Status</Label>
+                    <Select
+                      value={editForm.status}
+                      onValueChange={(val: any) => setEditForm({ ...editForm, status: val })}
+                    >
+                      <SelectTrigger className="bg-black/40 border-white/10">
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="inactive">Inactive</SelectItem>
+                        <SelectItem value="training">Training</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* Voice Settings */}
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="glass-card rounded-2xl p-6 space-y-6">
+                <h3 className="flex items-center gap-2 text-sm font-bold text-foreground uppercase tracking-wider mb-4">
+                  <Volume2 className="h-4 w-4 text-primary" /> Voice Settings
+                </h3>
+
+                <div className="grid gap-4">
+                  <div className="grid gap-2">
+                    <Label>Voice Model</Label>
+                    <Select
+                      value={editForm.voiceId}
+                      onValueChange={(val) => setEditForm({ ...editForm, voiceId: val })}
+                    >
+                      <SelectTrigger className="bg-black/40 border-white/10">
+                        <SelectValue placeholder="Select a voice" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {AVAILABLE_VOICES.map((voice) => (
+                          <SelectItem key={voice.id} value={voice.id}>
+                            <span className="font-medium">{voice.name}</span>
+                            <span className="text-xs text-muted-foreground ml-2">({voice.gender}, {voice.provider})</span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      {AVAILABLE_VOICES.find(v => v.id === editForm.voiceId)?.description || "Select a voice for your agent."}
+                    </p>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="first-message">First Message (Greeting)</Label>
+                    <Textarea
+                      id="first-message"
+                      value={editForm.firstMessage}
+                      onChange={(e) => setEditForm({ ...editForm, firstMessage: e.target.value })}
+                      className="bg-black/40 border-white/10 min-h-[80px]"
+                      placeholder="Hello! How can I help you today?"
+                    />
+                    <p className="text-[10px] text-muted-foreground">This is the first thing the agent says when a call connects.</p>
+                  </div>
+                </div>
+              </motion.div>
 
               {/* System Prompt */}
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="glass-card rounded-2xl p-6 space-y-4 lg:col-span-2">
-                <h3 className="flex items-center gap-2 text-sm font-bold text-foreground uppercase tracking-wider mb-4">
-                  <Brain className="h-4 w-4 text-primary" /> Complete System Prompt
-                </h3>
-                <div className="relative">
-                  <pre className="whitespace-pre-wrap rounded-xl bg-black/40 p-5 font-mono text-xs leading-relaxed text-gray-300 border border-white/5 max-h-[400px] overflow-auto custom-scrollbar">
-                    {agent.systemPrompt || "No system prompt configured."}
-                  </pre>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(agent.systemPrompt || "");
-                      toast({ title: "Copied!", description: "System prompt copied to clipboard" });
-                    }}
-                    className="absolute top-2 right-2 p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
-                  >
-                    <Copy className="h-3 w-3 text-muted-foreground" />
-                  </button>
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass-card rounded-2xl p-6 space-y-6 lg:col-span-2">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="flex items-center gap-2 text-sm font-bold text-foreground uppercase tracking-wider">
+                    <Brain className="h-4 w-4 text-primary" /> System Directives (Prompt)
+                  </h3>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setEditForm({ ...editForm, systemPrompt: agent.systemPrompt || "" })} className="h-8 text-xs">
+                      Reset
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Textarea
+                    value={editForm.systemPrompt}
+                    onChange={(e) => setEditForm({ ...editForm, systemPrompt: e.target.value })}
+                    className="bg-black/40 border-white/10 font-mono text-xs min-h-[300px]"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Define the agent's personality, rules, and knowledge base here.
+                  </p>
                 </div>
               </motion.div>
             </div>
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Project Integrator Modal */}
+      {showIntegrator && (
+        <ProjectIntegrator
+          agentName={agent.name}
+          agentRole={agent.role}
+          onClose={() => setShowIntegrator(false)}
+        />
+      )}
     </DashboardLayout>
   );
 };
